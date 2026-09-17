@@ -4,6 +4,7 @@ import {
   parseWaferMapJson,
   validateWaferMap,
 } from "./validation.js";
+import sampleWafer from "../sample_wafer.json";
 
 describe("validateWaferMap", () => {
   it("accepts a direct matrix and returns a defensive copy", () => {
@@ -41,7 +42,16 @@ describe("validateWaferMap", () => {
     expect(getMatrixStats([[0, 1], [2, 2]])).toMatchObject({
       rows: 2,
       columns: 2,
-      defectRatio: 0.5,
+      defectRatio: 2 / 3,
+    });
+  });
+
+  it("keeps the bundled demo sample aligned with WM-811K geometry", () => {
+    const result = validateWaferMap(sampleWafer);
+    expect(result).toMatchObject({
+      valid: true,
+      rows: 64,
+      columns: 64,
     });
   });
 });

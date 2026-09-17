@@ -97,11 +97,13 @@ export function getMatrixStats(matrix) {
   }
 
   let defects = 0;
+  let validPixels = 0;
   const rows = matrix.length;
   const columns = matrix[0].length;
 
   matrix.forEach((row) => {
     row.forEach((value) => {
+      if (value > 0) validPixels += 1;
       if (value === 2) defects += 1;
     });
   });
@@ -109,6 +111,8 @@ export function getMatrixStats(matrix) {
   return {
     rows,
     columns,
-    defectRatio: defects / (rows * columns),
+    // Match backend.preprocessing.calculate_defect_ratio: background (0)
+    // cells are excluded from the denominator.
+    defectRatio: validPixels ? defects / validPixels : 0,
   };
 }

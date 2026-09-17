@@ -11,7 +11,8 @@ Dự án gồm:
 - `artifacts/`: model và metadata dùng cho inference.
 - `backend/`: API FastAPI.
 - `frontend/`: giao diện React/Vite tiếng Việt.
-- `examples/sample_wafer.json`: dữ liệu mẫu để kiểm tra.
+- `examples/sample_wafer.json`: mẫu 64 × 64 theo cấu trúc wafer map WM-811K
+  (giá trị phân loại `0`, `1`, `2`) để preview giống dữ liệu notebook.
 - `data-mining-source.ipynb`: notebook nghiên cứu ban đầu.
 
 Model production hiện có 9 lớp:
@@ -242,6 +243,10 @@ Upload file mẫu:
 C:\Users\<Tên người dùng>\Desktop\data-mining-trackb\examples\sample_wafer.json
 ```
 
+File mẫu là ma trận vuông 64 × 64, giữ hình học đĩa wafer và bảng mã màu
+`0` (nền), `1` (vùng wafer/die), `2` (defect) như các map đã resize trong
+notebook. Nút **Dùng dữ liệu mẫu** trên giao diện tải cùng một mẫu này.
+
 Frontend hỗ trợ:
 
 - Upload hoặc kéo-thả JSON.
@@ -286,6 +291,10 @@ Quy tắc:
 - Giá trị chỉ được là số nguyên `0`, `1`, `2`.
 - Mỗi chiều tối đa `512`.
 - Backend resize ma trận về `64×64` bằng nearest-neighbor.
+
+Mẫu `examples/sample_wafer.json` đã ở kích thước 64 × 64 nên preview không bị
+biến thành một ma trận đồ chơi nhỏ; các ma trận khác vẫn được backend resize
+theo cùng quy tắc.
 
 ## 8. Chạy frontend/backend bằng Docker
 
@@ -401,4 +410,3 @@ npm run build
 - Confidence là tín hiệu tham khảo, chưa calibration.
 - Kết quả là dự đoán mẫu hình wafer map, không phải kết luận chất lượng vật lý tuyệt đối.
 - Training phải chạy offline trên Kaggle/Colab; backend chỉ load artifact và inference.
-

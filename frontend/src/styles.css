@@ -460,9 +460,12 @@ code {
 
 .matrix-canvas {
   display: block;
+  aspect-ratio: 1;
   width: 100%;
   height: auto;
   padding: 15px;
+  background: #000;
+  image-rendering: pixelated;
 }
 
 .matrix-empty {
@@ -509,15 +512,15 @@ code {
 }
 
 .legend-background {
-  background: #152536;
+  background: #000;
 }
 
 .legend-die {
-  background: #8bd5ff;
+  background: #008080;
 }
 
 .legend-defect {
-  background: #ff6f91;
+  background: #ffd700;
 }
 
 .metadata-fields {

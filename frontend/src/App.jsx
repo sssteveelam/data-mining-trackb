@@ -9,20 +9,7 @@ import {
   getMatrixStats,
   validateWaferMap,
 } from "./lib/validation.js";
-
-const SAMPLE_MAP = [
-  [0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0],
-  [0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0],
-  [0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0],
-  [0, 1, 1, 1, 1, 2, 2, 1, 1, 1, 1, 0],
-  [1, 1, 1, 1, 2, 2, 2, 2, 1, 1, 1, 1],
-  [1, 1, 1, 1, 1, 2, 2, 1, 1, 1, 1, 1],
-  [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-  [0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0],
-  [0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0],
-  [0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0],
-  [0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0],
-];
+import sampleWafer from "./sample_wafer.json";
 
 const EMPTY_HEALTH = {
   state: "unknown",
@@ -69,8 +56,10 @@ function MatrixPreview({ matrix, title, subtitle }) {
     const canvas = canvasRef.current;
     if (!canvas || !matrix?.length || !matrix[0]?.length) return;
 
-    const width = 520;
-    const height = 340;
+    // WM-811K maps are square categorical rasters. Keep the preview square so
+    // the circular wafer geometry is not stretched into a banner.
+    const width = 440;
+    const height = 440;
     const pixelRatio = window.devicePixelRatio || 1;
     canvas.width = width * pixelRatio;
     canvas.height = height * pixelRatio;
@@ -78,7 +67,8 @@ function MatrixPreview({ matrix, title, subtitle }) {
 
     const context = canvas.getContext("2d");
     context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
-    context.fillStyle = "#08131f";
+    context.imageSmoothingEnabled = false;
+    context.fillStyle = "#000000";
     context.fillRect(0, 0, width, height);
 
     const rows = matrix.length;
@@ -89,22 +79,26 @@ function MatrixPreview({ matrix, title, subtitle }) {
     const offsetX = (width - mapWidth) / 2;
     const offsetY = (height - mapHeight) / 2;
     const colors = {
-      0: "#152536",
-      1: "#8bd5ff",
-      2: "#ff6f91",
+      0: "#000000",
+      1: "#008080",
+      2: "#ffd700",
     };
 
     matrix.forEach((row, rowIndex) => {
       row.forEach((value, columnIndex) => {
         const x = offsetX + columnIndex * cellSize;
         const y = offsetY + rowIndex * cellSize;
+        const nextX = offsetX + (columnIndex + 1) * cellSize;
+        const nextY = offsetY + (rowIndex + 1) * cellSize;
         context.fillStyle = colors[value] || colors[0];
-        context.fillRect(x, y, cellSize + 0.35, cellSize + 0.35);
+        context.fillRect(x, y, nextX - x, nextY - y);
       });
     });
 
-    if (rows <= 80 && columns <= 80 && cellSize >= 4) {
-      context.strokeStyle = "rgba(5, 18, 31, 0.28)";
+    // Keep the grid useful for tiny hand-authored matrices, but do not draw
+    // it over 64×64 maps: the notebook renders those as uninterrupted pixels.
+    if (rows <= 32 && columns <= 32 && cellSize >= 8) {
+      context.strokeStyle = "rgba(0, 0, 0, 0.22)";
       context.lineWidth = 0.5;
       for (let rowIndex = 0; rowIndex <= rows; rowIndex += 1) {
         const y = offsetY + rowIndex * cellSize;
@@ -333,7 +327,7 @@ function App() {
   };
 
   const loadSample = () => {
-    loadPayload(SAMPLE_MAP, "sample-wafer-map.json");
+    loadPayload(sampleWafer.wafer_map, "sample-wafer-map-64x64.json");
   };
 
   const handleAnalyze = async () => {
@@ -414,11 +408,14 @@ function App() {
                 <span className="step-number">01</span>
                 <div>
                   <h2>Chọn wafer map</h2>
-                  <p>File JSON dạng ma trận 2 chiều, tối đa 512 × 512.</p>
+                  <p>
+                    Ma trận categorical 0/1/2, tối đa 512 × 512; mẫu demo là
+                    map WM-811K 64 × 64.
+                  </p>
                 </div>
               </div>
               <button className="text-button" type="button" onClick={loadSample}>
-                Dùng dữ liệu mẫu
+                Dùng mẫu WM-811K 64 × 64
               </button>
             </div>
 
