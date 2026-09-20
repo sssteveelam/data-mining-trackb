@@ -12,8 +12,9 @@ application for academic demonstration.
   source dataset and weights from version control.
 - `examples/sample_wafer.json`: a 64 × 64 WM-811K-shaped categorical sample
   (values `0`, `1`, and `2`) for a realistic preview.
+- `DEPLOY.md`: Docker Compose deployment guide for local machines and Linux servers.
 
-The production-facing model has nine classes:
+The checked-in artifact is the nine-class baseline (`cnn-9class-v1`):
 
 ```text
 Center, Donut, Edge-Loc, Edge-Ring, Loc,
@@ -22,6 +23,12 @@ Near-full, Normal, Random, Scratch
 
 `Horizontal_Stripes` is not included because the notebook created it from two
 candidate samples without retraining the classifier.
+
+The training package now supports a reviewed ten-class export. It will refuse
+to train a new class with fewer than 30 samples. Run
+`training.audit_dataset` first, then export a separate `cnn-10class-v1`
+artifact after domain review; do not rename the current nine-class
+`labels.json` manually.
 
 ## Chạy nhanh
 
@@ -82,6 +89,38 @@ python -m training.export_model \
 The API intentionally refuses to fabricate predictions when the bundle is
 missing. It reports model availability from `/api/v1/health` and
 `/api/v1/model-info`.
+
+### Export a reviewed ten-class model
+
+After reviewing and adding enough `Horizontal_Stripes` samples to the
+notebook dataframe, save it in Kaggle:
+
+```python
+df_train_version2.to_pickle(
+    "/kaggle/working/WM811K_train_v2_reviewed.pkl"
+)
+```
+
+Audit the actual label counts:
+
+```bash
+python -m training.audit_dataset \
+  --dataset /kaggle/working/WM811K_train_v2_reviewed.pkl \
+  --output /kaggle/working/label_audit.json
+```
+
+Only if the audit reports `ready_for_export: true`:
+
+```bash
+python -m training.export_model \
+  --dataset /kaggle/working/WM811K_train_v2_reviewed.pkl \
+  --output-dir /kaggle/working/artifacts-10class \
+  --model-version cnn-10class-v1
+```
+
+The new artifact's `labels.json`, `metrics.json`, and `manifest.json` must
+contain ten classes, including `Horizontal_Stripes`, before replacing the
+baseline artifact used by the API.
 
 ## Run locally with Docker
 

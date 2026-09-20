@@ -223,6 +223,7 @@ function App() {
   const [waferIndex, setWaferIndex] = useState("");
   const [health, setHealth] = useState(EMPTY_HEALTH);
   const [modelVersion, setModelVersion] = useState(null);
+  const [modelClassCount, setModelClassCount] = useState(null);
 
   const inputStats = useMemo(() => getMatrixStats(matrix), [matrix]);
   const topK = useMemo(() => normalizeTopK(result), [result]);
@@ -306,7 +307,14 @@ function App() {
       }
 
       if (modelResult.status === "fulfilled") {
-        setModelVersion(normalizeModelVersion(modelResult.value));
+        const modelInfo = modelResult.value;
+        setModelVersion(normalizeModelVersion(modelInfo));
+        const classCount = Number(modelInfo?.class_count);
+        if (Number.isInteger(classCount) && classCount > 0) {
+          setModelClassCount(classCount);
+        } else if (Array.isArray(modelInfo?.labels) && modelInfo.labels.length > 0) {
+          setModelClassCount(modelInfo.labels.length);
+        }
       }
     });
 
@@ -659,7 +667,9 @@ function App() {
           <span>
             Backend API: <code>{API_BASE_URL}</code>
           </span>
-          <span>9 lớp phân loại · CPU inference · Không lưu dữ liệu</span>
+          <span>
+            {modelClassCount ?? "—"} lớp phân loại · CPU inference · Không lưu dữ liệu
+          </span>
         </footer>
       </main>
     </div>

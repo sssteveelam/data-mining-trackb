@@ -7,6 +7,20 @@ Example (Colab/Kaggle):
       --output-dir artifacts \
       --model-version cnn-9class-v1
 
+After a reviewed discovery pass, the input may also be a pickle containing
+``failureType = "Horizontal_Stripes"`` rows (for example the notebook's
+``df_train_version2``).  The exporter infers the number of classes from the
+data, so a reviewed ten-class dataset can be exported with:
+
+    python -m training.export_model \
+      --dataset /kaggle/working/WM811K_train_v2.pkl \
+      --output-dir artifacts-10class \
+      --model-version cnn-10class-v1
+
+The exporter deliberately refuses classes with fewer than thirty samples.  A
+two-sample CURE candidate is a discovery result, not enough evidence for a
+train/validation/test split or a defensible classification metric.
+
 The API never invokes this module.  It only loads the exported files.
 """
 
@@ -22,10 +36,11 @@ from typing import Any
 
 import numpy as np
 
-from .preprocess import TARGET_SIZE, calculate_defect_ratio, normalize_wafer_map
+from .preprocess import TARGET_SIZE, normalize_wafer_map, validate_wafer_map
 
 SEED = 42
 DEFAULT_MODEL_VERSION = "cnn-9class-v1"
+DEFAULT_MIN_SAMPLES_PER_CLASS = 30
 
 
 def _set_seed(seed: int = SEED) -> None:
@@ -51,7 +66,7 @@ def _unpack_nested_label(value: Any) -> str | None:
     return text or None
 
 
-def _load_dataset(path: Path):
+def _load_dataset(path: Path, *, min_samples_per_class: int = DEFAULT_MIN_SAMPLES_PER_CLASS):
     try:
         import pandas as pd
     except ImportError as exc:  # pragma: no cover - dependency error path
@@ -62,6 +77,25 @@ def _load_dataset(path: Path):
     dataframe["failureType"] = dataframe["failureType"].map(_unpack_nested_label)
     labeled = dataframe.dropna(subset=["failureType"]).copy()
     labeled["failureType"] = labeled["failureType"].replace({"none": "Normal"})
+
+    if "waferMap" not in labeled.columns and "waferMap_resized" not in labeled.columns:
+        raise ValueError(
+            "dataset must contain a waferMap or waferMap_resized column"
+        )
+
+    class_counts = labeled["failureType"].value_counts()
+    too_small = class_counts[class_counts < min_samples_per_class]
+    if not too_small.empty:
+        details = ", ".join(
+            f"{label}={int(count)}" for label, count in too_small.items()
+        )
+        raise ValueError(
+            "every class needs at least "
+            f"{min_samples_per_class} samples for the stratified "
+            f"train/validation/test split; insufficient classes: {details}. "
+            "A discovered label must be reviewed and expanded before it is "
+            "used as a production classifier class."
+        )
 
     normal = labeled[labeled["failureType"] == "Normal"]
     defects = labeled[labeled["failureType"] != "Normal"]
@@ -131,6 +165,7 @@ def export_model(
     model_version: str = DEFAULT_MODEL_VERSION,
     epochs: int = 10,
     batch_size: int = 128,
+    min_samples_per_class: int = DEFAULT_MIN_SAMPLES_PER_CLASS,
 ) -> dict[str, Any]:
     """Train and export the CNN; return the generated manifest."""
 
@@ -143,12 +178,33 @@ def export_model(
     except ImportError as exc:  # pragma: no cover - dependency error path
         raise RuntimeError("scikit-learn is required for training") from exc
 
-    dataframe = _load_dataset(dataset_path)
+    if min_samples_per_class < 2:
+        raise ValueError("min_samples_per_class must be at least 2")
+    dataframe = _load_dataset(
+        dataset_path,
+        min_samples_per_class=min_samples_per_class,
+    )
     labels = LabelEncoder()
     y = labels.fit_transform(dataframe["failureType"].to_numpy())
-    x = np.stack(
-        [normalize_wafer_map(value) for value in dataframe["waferMap"].to_numpy()]
-    ).astype(np.float32)
+    map_column = "waferMap" if "waferMap" in dataframe.columns else "waferMap_resized"
+    # Notebook discovery exports already-resized categorical maps.  The
+    # shared preprocessing function is intentionally used for raw maps only;
+    # resized maps still need the same /2 normalization and channel dimension.
+    if map_column == "waferMap":
+        x = np.stack(
+            [normalize_wafer_map(value) for value in dataframe[map_column].to_numpy()]
+        ).astype(np.float32)
+    else:
+        resized_maps: list[np.ndarray] = []
+        for value in dataframe[map_column].to_numpy():
+            validated = validate_wafer_map(value)
+            if tuple(validated.shape) != TARGET_SIZE:
+                raise ValueError(
+                    "waferMap_resized rows must all have shape "
+                    f"{TARGET_SIZE}; got {tuple(validated.shape)}"
+                )
+            resized_maps.append(validated.astype(np.float32) / 2.0)
+        x = np.expand_dims(np.stack(resized_maps), axis=-1).astype(np.float32)
 
     x_train, x_test, y_train, y_test = train_test_split(
         x,
@@ -217,8 +273,15 @@ def export_model(
         ),
         encoding="utf-8",
     )
+    class_counts = {
+        str(label): int(count)
+        for label, count in dataframe["failureType"].value_counts().sort_index().items()
+    }
     metrics = {
         "model_version": model_version,
+        "label_count": int(len(labels.classes_)),
+        "labels": labels.classes_.tolist(),
+        "class_counts": class_counts,
         "dataset": {
             "source": str(dataset_path),
             "labeled_samples": int(len(dataframe)),
@@ -244,9 +307,30 @@ def export_model(
 
     files = [model_path, labels_path, preprocess_path, metrics_path]
     manifest = {
-        "format": "wafer-map-classifier-artifact-v1",
+        "format": (
+            "wafer-map-classifier-artifact-v2"
+            if len(labels.classes_) > len(
+                (
+                    "Center",
+                    "Donut",
+                    "Edge-Loc",
+                    "Edge-Ring",
+                    "Loc",
+                    "Near-full",
+                    "Normal",
+                    "Random",
+                    "Scratch",
+                )
+            )
+            else "wafer-map-classifier-artifact-v1"
+        ),
         "model_version": model_version,
         "labels": labels.classes_.tolist(),
+        "training_mode": (
+            "new-label-retrained"
+            if len(labels.classes_) > 9
+            else "baseline"
+        ),
         "files": {path.name: {"sha256": _sha256(path), "bytes": path.stat().st_size} for path in files},
     }
     manifest_path.write_text(
@@ -263,6 +347,15 @@ def main() -> None:
     parser.add_argument("--model-version", default=DEFAULT_MODEL_VERSION)
     parser.add_argument("--epochs", type=int, default=10)
     parser.add_argument("--batch-size", type=int, default=128)
+    parser.add_argument(
+        "--min-samples-per-class",
+        type=int,
+        default=DEFAULT_MIN_SAMPLES_PER_CLASS,
+        help=(
+            "Minimum rows required for every label before a stratified "
+            "train/validation/test split (default: 30)."
+        ),
+    )
     args = parser.parse_args()
 
     if not args.dataset.exists():
@@ -273,10 +366,10 @@ def main() -> None:
         model_version=args.model_version,
         epochs=args.epochs,
         batch_size=args.batch_size,
+        min_samples_per_class=args.min_samples_per_class,
     )
     print(json.dumps(manifest, ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":
     main()
-

@@ -15,7 +15,7 @@ Dự án gồm:
   (giá trị phân loại `0`, `1`, `2`) để preview giống dữ liệu notebook.
 - `data-mining-source.ipynb`: notebook nghiên cứu ban đầu.
 
-Model production hiện có 9 lớp:
+Artifact hiện tại là model baseline 9 lớp:
 
 ```text
 Center, Donut, Edge-Loc, Edge-Ring, Loc,
@@ -23,6 +23,10 @@ Near-full, Normal, Random, Scratch
 ```
 
 `Horizontal_Stripes` không được đưa vào model vì notebook mới phát hiện 2 mẫu và chưa retrain classifier.
+
+Code training đã có sẵn đường đi để export model 10 lớp sau khi có dữ liệu
+`Horizontal_Stripes` được chuyên gia duyệt. Không được chỉ sửa tay
+`labels.json`: phải retrain CNN, đánh giá lớp mới và export lại toàn bộ artifact.
 
 ## 2. Yêu cầu
 
@@ -88,6 +92,37 @@ Get-ChildItem "C:\Users\<Tên người dùng>\Desktop\data-mining-trackb\artifac
 ```text
 artifacts\artifacts\model.keras
 ```
+
+### Nếu cần hoàn thành phần nhãn mới
+
+Trong Kaggle, sau khi rà soát và bổ sung đủ mẫu `Horizontal_Stripes`, lưu
+dataset đã duyệt:
+
+```python
+df_train_version2.to_pickle(
+    "/kaggle/working/WM811K_train_v2_reviewed.pkl"
+)
+```
+
+Kiểm tra số lượng từng nhãn:
+
+```bash
+python -m training.audit_dataset \
+  --dataset /kaggle/working/WM811K_train_v2_reviewed.pkl \
+  --output /kaggle/working/label_audit.json
+```
+
+Chỉ train khi audit báo `ready_for_export: true`:
+
+```bash
+python -m training.export_model \
+  --dataset /kaggle/working/WM811K_train_v2_reviewed.pkl \
+  --output-dir /kaggle/working/artifacts-10class \
+  --model-version cnn-10class-v1
+```
+
+Artifact 10 lớp phải có `Horizontal_Stripes` trong `labels.json`, có metrics
+riêng cho lớp mới trong `metrics.json`, rồi mới được chép vào thư mục runtime.
 
 ## 4. Cài backend bằng WSL2
 

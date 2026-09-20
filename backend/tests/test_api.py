@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import json
 
 import pytest
 
@@ -34,6 +35,35 @@ def test_model_info_exposes_nine_production_labels(client: TestClient) -> None:
     body = response.json()
     assert body["class_count"] == 9
     assert "Horizontal_Stripes" not in body["labels"]
+
+
+def test_model_info_accepts_reviewed_ten_class_label_manifest(tmp_path: Path) -> None:
+    labels = [
+        "Center",
+        "Donut",
+        "Edge-Loc",
+        "Edge-Ring",
+        "Loc",
+        "Near-full",
+        "Normal",
+        "Random",
+        "Scratch",
+        "Horizontal_Stripes",
+    ]
+    (tmp_path / "labels.json").write_text(
+        json.dumps({"labels": labels}),
+        encoding="utf-8",
+    )
+    settings = Settings(artifact_dir=tmp_path)
+    service = InferenceService(settings, loader=ModelLoader(tmp_path))
+    client = TestClient(create_app(settings=settings, service=service))
+
+    response = client.get("/api/v1/model-info")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["class_count"] == 10
+    assert body["labels"] == labels
+    assert body["model_loaded"] is False
 
 
 def test_predict_without_artifact_returns_503(client: TestClient) -> None:

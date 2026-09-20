@@ -30,8 +30,10 @@ DEFAULT_LABELS: tuple[str, ...] = (
     "Random",
     "Scratch",
 )
+OPTIONAL_DISCOVERED_LABEL = "Horizontal_Stripes"
+SUPPORTED_CLASS_COUNTS: tuple[int, ...] = (9, 10)
+SUPPORTED_LABELS = frozenset((*DEFAULT_LABELS, OPTIONAL_DISCOVERED_LABEL))
 FALLBACK_MODEL_VERSION = "cnn-9class-unavailable"
-EXPECTED_CLASS_COUNT = 9
 
 
 class ModelUnavailableError(RuntimeError):
@@ -57,14 +59,24 @@ def _load_labels(path: Path) -> list[str]:
     if not isinstance(raw, list) or not raw or not all(isinstance(item, str) for item in raw):
         raise ValueError("labels.json must contain a non-empty string list or {'labels': [...]}")
     labels = [item.strip() for item in raw]
+    labels_set = set(labels)
+    valid_shape = len(labels) in SUPPORTED_CLASS_COUNTS
+    valid_names = labels_set.issubset(SUPPORTED_LABELS)
+    has_base_classes = set(DEFAULT_LABELS).issubset(labels_set)
+    discovered_label_valid = (
+        OPTIONAL_DISCOVERED_LABEL not in labels_set or len(labels) == 10
+    )
     if (
-        len(labels) != EXPECTED_CLASS_COUNT
-        or "Horizontal_Stripes" in labels
-        or len(set(labels)) != len(labels)
+        not valid_shape
+        or not valid_names
+        or not has_base_classes
+        or not discovered_label_valid
+        or len(labels_set) != len(labels)
     ):
         raise ValueError(
-            "production artifact must contain exactly the nine trained classes "
-            "and must not contain Horizontal_Stripes"
+            "production artifact must contain the nine baseline classes, "
+            "optionally plus Horizontal_Stripes, with no duplicate or "
+            "unknown labels"
         )
     return labels
 
@@ -148,6 +160,7 @@ class ModelLoader:
         try:
             loaded_labels = _load_labels(self.artifact_dir / "labels.json")
             labels = loaded_labels
+            artifact_default_version = f"cnn-{len(labels)}class-v1"
             raw_manifest = _read_json(self.artifact_dir / "manifest.json")
             if isinstance(raw_manifest, dict):
                 manifest = raw_manifest
@@ -160,7 +173,10 @@ class ModelLoader:
 
             if not model_path.exists():
                 return ArtifactStatus(
-                    model_version=str((manifest or {}).get("model_version") or FALLBACK_MODEL_VERSION),
+                    model_version=str(
+                        (manifest or {}).get("model_version")
+                        or artifact_default_version
+                    ),
                     labels=labels,
                     loaded=False,
                     degraded=True,
@@ -175,7 +191,10 @@ class ModelLoader:
                 import tensorflow as tf  # type: ignore
             except Exception as exc:  # pragma: no cover - depends on runtime image
                 return ArtifactStatus(
-                    model_version=str((manifest or {}).get("model_version") or FALLBACK_MODEL_VERSION),
+                    model_version=str(
+                        (manifest or {}).get("model_version")
+                        or artifact_default_version
+                    ),
                     labels=labels,
                     loaded=False,
                     degraded=True,
@@ -188,7 +207,10 @@ class ModelLoader:
 
             self._model = tf.keras.models.load_model(model_path, compile=False)
             return ArtifactStatus(
-                model_version=str((manifest or {}).get("model_version") or "cnn-9class-v1"),
+                model_version=str(
+                    (manifest or {}).get("model_version")
+                    or artifact_default_version
+                ),
                 labels=labels,
                 loaded=True,
                 degraded=False,
